@@ -102,7 +102,8 @@ echo "${name}: Working ... generating SVG file \"${1}/${OUTFILE}\"..."
 # --cp             # use consistent palette (palette.map)
 # --notes TEXT     # add notes comment in SVG (for debugging)
 WIDTH=1900  # can make it v large; you'll just have to scroll horizontally...
-TITLE="CPU mixed-mode Flame"
+TITLE="$(date) : 
+CPU mixed-mode Flame"
 # ${name} result-folder SVG-filename style-to-display(1 for icicle) type(1 for FlameChart)" [cmdline]
 #            p1               p2           p3:STYLE                      p4:TYPE            p5:cmdline
 
