@@ -1,4 +1,4 @@
-# Quick Summary
+#Quick Summary
 
 This is a swapper over Brendan Gregg's [original](https://github.com/brendangregg/FlameGraph) - and wonderful! - FlameGraph software. It's USP - it makes it even easier to use, both in the default case as well as with helpful options tacked on.
 
@@ -6,7 +6,7 @@ A sample FlameGraph - generated while `rm -rf <filespec>` was running:
 ![sample FlameGraph - generated while rm -rf <filespec> was running](https://github.com/kaiwan/flamegrapher/blob/main/fg_samples/rm-rf_running1.svg)
 
 
-# Details
+#Details
 
 CPU FlameGraphs are a visualization of profiled software, allowing the most
 frequent code-paths to be identified quickly and accurately. They can be
@@ -37,24 +37,25 @@ Options:
                  You MUST specify multi-word commands within quotes; f.e. `"ls -laR"` (see Examples below)
                  NOTE: If a program named `foo` with a parameter named `param1` in the current dir is to be executed, don't give `-c "./foo param1"`, instead give it as `-c "$(pwd)/foo param1"`
 
- -p PID          Generate a Flame Graph for ONLY this process or thread
+ `-p PID`          Generate a Flame Graph for ONLY this process or thread
                  
-&nbsp; **NOTE**: If neither -c nor -p is passed, the *entire system* is sampled... Furthermore:
-               
-&nbsp; `-c "cmd"` and `-p PID` are mutually exclusive options; you can specify only one of them.
+&nbsp; *NOTE*: If neither -c nor -p is passed, the *entire system* is sampled... Furthermore, 
+ `-c "cmd"` and `-p PID` are mutually exclusive options; you can specify only one of them.
 
-` -s <style>` : `normal` :  Draw the stack frames growing upward   \[default]
+`-s <style> : normal` : Draw the stack frames growing upward   (the default)
 
-              `icicle` :  Draw the stack frames growing downward
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`icicle` : Draw the stack frames growing downward
 
-` -t <type>`  : `graph` :     Produce a Flame Graph (X axis is NOT time, merges stacks) [default]
+`-t <type>  : graph` :     Produce a Flame Graph (X axis is NOT time, merges stacks) [default]
                           -good for performance outliers (who's eating CPU? using max stack?);
 Works well for multi-threaded apps
 
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
               `chart` :    Produce a Flame Chart (sort by time, do not merge stacks)
                           -good for seeing all calls; works well for single-threaded apps
- -f <freq>  :            Have perf sample the system/process at [default=99]
-                          -too high a value here can cause issues.
+
+`-f <freq>`  :            Have perf sample the system/process at [default=99].
+                          Too high a value here can cause issues.
 
 **NOTE:**
 
@@ -63,16 +64,17 @@ Works well for multi-threaded apps
   copy them to a non-volatile location to save them
 * As a bonus, this script also generates a **'speedscope'** input file, a flamegraph viewable
   in the [speedscope web app](https://www.speedscope.app/)
-  
-TIP: Within it's web page, the top line shows available lookup (and other) options:
 
-`   Time Order   Left Heavy   Sandwich           <process-name> tid: <TID> (thrd#/total#)    Export  Import  <Style>  Help`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+*TIP*: Within it's web page, the top line shows available lookup (and other) options:
 
-  Use these to lookup all/particular threads, export it (json), etc
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`   Time Order   Left Heavy   Sandwich           <process-name> tid: <TID> (thrd#/total#)    Export  Import  <Style>  Help`
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;  Use these to lookup all/particular threads, export it (json), etc
   [Speedscope help available here](https://github.com/jlfwong/speedscope#usage).
 
 
-## Example Usage
+##Example Usage
 
 * `flame_grapher.sh -o whole_system`
     \# Sample the *entire system* and generate the FG (in /tmp/flamegraphs/whole_system/whole_system.svg)
@@ -87,7 +89,7 @@ TIP: Within it's web page, the top line shows available lookup (and other) optio
 (Of course, when running the script from it's git directory - when it isn't in your `PATH` - pl use the 'dot-slash prefix): `./flame_grapher.sh -o ...`
 
 
-## IMPORTANT: Getting a decent FlameGraph works best when:
+## Getting a decent FlameGraph works best when:
 
 * Symbols are present in the binary executable (i.e., when the binary isn't stripped of all symbols)
 * Frame Pointers are enabled (-fomit-frame-pointer is the typical GCC flag!
@@ -96,7 +98,7 @@ TIP: Within it's web page, the top line shows available lookup (and other) optio
 * The Linux kernel symbols are present when the kernel config `CONFIG_DEBUG_KERNEL` is set (to `y`).
 
 
-## Known Issues
+##Known Issues
 
 I came across this issue with the (original) flamegraph Perl script on an AArch64
 Yocto-based custom embedded Linux..:
