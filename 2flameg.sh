@@ -41,8 +41,11 @@ red_fg "
 --- speedscope ---"
 sudo perf script --input ${INFILE} -f > ${SPEEDSCOPE_FILE}
 sudo chown ${LOGNAME}:${LOGNAME} ${SPEEDSCOPE_FILE}
+echo
+green_fg "- ${SPEEDSCOPE_HELP1}"
+blue_fg "- ${SPEEDSCOPE_HELP2}"
+green_fg "- ${SPEEDSCOPE_HELP3}"
 ls -lh $(realpath ${SPEEDSCOPE_FILE})
-echo "- ${SPEEDSCOPE_HELP}"
 red_fg "---"
 }
 
@@ -157,7 +160,7 @@ grep -w "NOTES\:" ${1}/${OUTFILE}
 
 # Display in chrome !
 if [[ -f $(which google-chrome-stable) ]] ; then
-  nohup google-chrome-stable --incognito --new-window ${1}/${OUTFILE} &
+  google-chrome-stable --incognito --new-window ${1}/${OUTFILE} 2>/dev/null &
 else
   echo "View the above SVG file in your web browser to see and zoom into the CPU FlameGraph."
 fi
