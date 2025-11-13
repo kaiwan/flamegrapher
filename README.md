@@ -1,4 +1,4 @@
-#Quick Summary
+# Quick Summary
 
 This is a swapper over Brendan Gregg's [original](https://github.com/brendangregg/FlameGraph) - and wonderful! - FlameGraph software. It's USP - it makes it even easier to use, both in the default case as well as with helpful options tacked on.
 
@@ -6,7 +6,7 @@ A sample FlameGraph - generated while `rm -rf <filespec>` was running:
 ![sample FlameGraph - generated while rm -rf <filespec> was running](https://github.com/kaiwan/flamegrapher/blob/main/fg_samples/rm-rf_running1.svg)
 
 
-#Details
+# Details
 
 CPU FlameGraphs are a visualization of profiled software, allowing the most
 frequent code-paths to be identified quickly and accurately. They can be
@@ -72,7 +72,7 @@ TIP: Within it's web page, the top line shows available lookup (and other) optio
   [Speedscope help available here](https://github.com/jlfwong/speedscope#usage).
 
 
-##Example Usage
+## Example Usage
 
 * `flame_grapher.sh -o whole_system`
     \# Sample the *entire system* and generate the FG (in /tmp/flamegraphs/whole_system/whole_system.svg)
@@ -87,7 +87,7 @@ TIP: Within it's web page, the top line shows available lookup (and other) optio
 (Of course, when running the script from it's git directory - when it isn't in your `PATH` - pl use the 'dot-slash prefix): `./flame_grapher.sh -o ...`
 
 
-## Getting a decent FlameGraph works best when:
+## IMPORTANT: Getting a decent FlameGraph works best when:
 
 * Symbols are present in the binary executable (i.e., when the binary isn't stripped of all symbols)
 * Frame Pointers are enabled (-fomit-frame-pointer is the typical GCC flag!
@@ -96,7 +96,7 @@ TIP: Within it's web page, the top line shows available lookup (and other) optio
 * The Linux kernel symbols are present when the kernel config `CONFIG_DEBUG_KERNEL` is set (to `y`).
 
 
-##Known Issues
+## Known Issues
 
 I came across this issue with the (original) flamegraph Perl script on an AArch64
 Yocto-based custom embedded Linux..:
