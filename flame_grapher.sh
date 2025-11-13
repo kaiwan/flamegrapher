@@ -54,7 +54,7 @@ Options:
  -c \"command\"    Generate a Flame Graph for ONLY this command-line (it's process's/threads)
                  You MUST specify multi-word commands within quotes; f.e. \"ls -laR\" (see Examples)"
   gray_fg "                 NOTE: If a program named 'foo' with a parameter named 'param1' in the current dir is to be executed, 
-                       don't give -c \"./foo param1\", instead give it as: -c \"\$(pwd)/foo param1\""
+                       don't specify it as: -c \"./foo param1\" ; instead specify as: -c \"\$(pwd)/foo param1\""
   echo "
  -p PID          Generate a Flame Graph for ONLY this process or thread"
   gray_fg "                 NOTE: * If neither -c nor -p is passed, the *entire system* is sampled...
@@ -136,7 +136,7 @@ which perf >/dev/null 2>&1 || die "${name}: perf not installed? Aborting...
  (cd; git clone https://github.com/brendangregg/FlameGraph)"
 
 # RedHat-like distros are often missing the perl-open package, req by the FlameGraph perl script
-lsb_release -i|egrep -i "RedHat|Alma|Rocky" && {
+lsb_release -i|grep -E -i "RedHat|Alma|Rocky" && {
   yum list installed|grep perl-open >/dev/null || sudo yum install perl-open.noarch
 }
 
