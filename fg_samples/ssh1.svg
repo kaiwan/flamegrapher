@@ -1,0 +1,801 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1900" height="750" onload="init(evt)" viewBox="0 0 1900 750" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES: notes text: FlameGraph, type normal -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom();
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				clearzoom();
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		// Fit in full text width
+		if (/^ *$/.test(txt) || t.getSubStringLength(0, txt.length) < w)
+			return;
+
+		for (var x = txt.length - 2; x > 0; x--) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (1 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom() {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1900.0" height="750.0" fill="url(#background)"  />
+<text id="title" x="950.00" y="24" >CPU mixed-mode FlameGraph ssh1.svg; style is flamegraph (merged stacks)</text>
+<text id="subtitle" x="950.00" y="48" >ssh1.svg</text>
+<text id="details" x="10.00" y="733" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1790.00" y="24" >Search</text>
+<text id="ignorecase" x="1874.00" y="24" >ic</text>
+<text id="matched" x="1790.00" y="733" > </text>
+<g id="frames">
+<g >
+<title>__libc_start_main_impl (54 samples, 100.00%)</title><rect x="10.0" y="84" width="1880.0" height="15.0" fill="rgb(218,113,13)" rx="2" ry="2" />
+<text  x="13.00" y="94.5" >__libc_start_main_impl</text>
+</g>
+<g >
+<title>tpacket_rcv (1 samples, 1.85%)</title><rect x="288.5" y="628" width="34.8" height="15.0" fill="rgb(250,55,22)" rx="2" ry="2" />
+<text  x="291.52" y="638.5" >tp..</text>
+</g>
+<g >
+<title>new_sync_write (1 samples, 1.85%)</title><rect x="184.1" y="276" width="34.8" height="15.0" fill="rgb(217,206,54)" rx="2" ry="2" />
+<text  x="187.07" y="286.5" >ne..</text>
+</g>
+<g >
+<title>inet_recvmsg (5 samples, 9.26%)</title><rect x="253.7" y="308" width="174.1" height="15.0" fill="rgb(206,203,49)" rx="2" ry="2" />
+<text  x="256.70" y="318.5" >inet_recvmsg</text>
+</g>
+<g >
+<title>ipv4_conntrack_local (1 samples, 1.85%)</title><rect x="253.7" y="484" width="34.8" height="15.0" fill="rgb(238,173,17)" rx="2" ry="2" />
+<text  x="256.70" y="494.5" >ip..</text>
+</g>
+<g >
+<title>__dev_xmit_skb (3 samples, 5.56%)</title><rect x="288.5" y="564" width="104.5" height="15.0" fill="rgb(254,35,49)" rx="2" ry="2" />
+<text  x="291.52" y="574.5" >__dev_xmit_skb</text>
+</g>
+<g >
+<title>kfree_skbmem (1 samples, 1.85%)</title><rect x="323.3" y="660" width="34.8" height="15.0" fill="rgb(219,58,47)" rx="2" ry="2" />
+<text  x="326.33" y="670.5" >kf..</text>
+</g>
+<g >
+<title>tty_insert_flip_string_and_push_buffer (1 samples, 1.85%)</title><rect x="184.1" y="372" width="34.8" height="15.0" fill="rgb(250,210,1)" rx="2" ry="2" />
+<text  x="187.07" y="382.5" >tt..</text>
+</g>
+<g >
+<title>ksys_write (1 samples, 1.85%)</title><rect x="184.1" y="244" width="34.8" height="15.0" fill="rgb(217,205,1)" rx="2" ry="2" />
+<text  x="187.07" y="254.5" >ks..</text>
+</g>
+<g >
+<title>do_sys_poll (42 samples, 77.78%)</title><rect x="427.8" y="212" width="1462.2" height="15.0" fill="rgb(229,41,23)" rx="2" ry="2" />
+<text  x="430.78" y="222.5" >do_sys_poll</text>
+</g>
+<g >
+<title>__GI___clock_gettime (2 samples, 3.70%)</title><rect x="114.4" y="180" width="69.7" height="15.0" fill="rgb(241,173,5)" rx="2" ry="2" />
+<text  x="117.44" y="190.5" >__GI___..</text>
+</g>
+<g >
+<title>ip_queue_xmit (4 samples, 7.41%)</title><rect x="253.7" y="420" width="139.3" height="15.0" fill="rgb(230,123,44)" rx="2" ry="2" />
+<text  x="256.70" y="430.5" >ip_queue_xmit</text>
+</g>
+<g >
+<title>__ip_finish_output (3 samples, 5.56%)</title><rect x="288.5" y="500" width="104.5" height="15.0" fill="rgb(251,228,18)" rx="2" ry="2" />
+<text  x="291.52" y="510.5" >__ip_finish_..</text>
+</g>
+<g >
+<title>schedule_hrtimeout_range (40 samples, 74.07%)</title><rect x="427.8" y="244" width="1392.6" height="15.0" fill="rgb(228,52,21)" rx="2" ry="2" />
+<text  x="430.78" y="254.5" >schedule_hrtimeout_range</text>
+</g>
+<g >
+<title>wake_up_process (1 samples, 1.85%)</title><rect x="184.1" y="436" width="34.8" height="15.0" fill="rgb(240,87,44)" rx="2" ry="2" />
+<text  x="187.07" y="446.5" >wa..</text>
+</g>
+<g >
+<title>dev_queue_xmit_nit (3 samples, 5.56%)</title><rect x="288.5" y="612" width="104.5" height="15.0" fill="rgb(224,56,40)" rx="2" ry="2" />
+<text  x="291.52" y="622.5" >dev_queue_xm..</text>
+</g>
+<g >
+<title>schedule_hrtimeout_range_clock (40 samples, 74.07%)</title><rect x="427.8" y="260" width="1392.6" height="15.0" fill="rgb(251,174,22)" rx="2" ry="2" />
+<text  x="430.78" y="270.5" >schedule_hrtimeout_range_clock</text>
+</g>
+<g >
+<title>__ip_local_out (1 samples, 1.85%)</title><rect x="253.7" y="468" width="34.8" height="15.0" fill="rgb(214,225,0)" rx="2" ry="2" />
+<text  x="256.70" y="478.5" >__..</text>
+</g>
+<g >
+<title>__tcp_send_ack.part.0 (5 samples, 9.26%)</title><rect x="253.7" y="388" width="174.1" height="15.0" fill="rgb(221,68,33)" rx="2" ry="2" />
+<text  x="256.70" y="398.5" >__tcp_send_ack.part.0</text>
+</g>
+<g >
+<title>tcp_poll (1 samples, 1.85%)</title><rect x="1820.4" y="260" width="34.8" height="15.0" fill="rgb(225,2,34)" rx="2" ry="2" />
+<text  x="1823.37" y="270.5" >tc..</text>
+</g>
+<g >
+<title>tcp_recvmsg (5 samples, 9.26%)</title><rect x="253.7" y="324" width="174.1" height="15.0" fill="rgb(210,32,34)" rx="2" ry="2" />
+<text  x="256.70" y="334.5" >tcp_recvmsg</text>
+</g>
+<g >
+<title>__dev_queue_xmit (3 samples, 5.56%)</title><rect x="288.5" y="548" width="104.5" height="15.0" fill="rgb(214,50,9)" rx="2" ry="2" />
+<text  x="291.52" y="558.5" >__dev_queue_..</text>
+</g>
+<g >
+<title>__schedule (40 samples, 74.07%)</title><rect x="427.8" y="292" width="1392.6" height="15.0" fill="rgb(205,82,18)" rx="2" ry="2" />
+<text  x="430.78" y="302.5" >__schedule</text>
+</g>
+<g >
+<title>__GI___poll (42 samples, 77.78%)</title><rect x="427.8" y="148" width="1462.2" height="15.0" fill="rgb(242,36,22)" rx="2" ry="2" />
+<text  x="430.78" y="158.5" >__GI___poll</text>
+</g>
+<g >
+<title>do_syscall_64 (1 samples, 1.85%)</title><rect x="184.1" y="212" width="34.8" height="15.0" fill="rgb(252,162,42)" rx="2" ry="2" />
+<text  x="187.07" y="222.5" >do..</text>
+</g>
+<g >
+<title>__x64_sys_poll (42 samples, 77.78%)</title><rect x="427.8" y="196" width="1462.2" height="15.0" fill="rgb(253,200,4)" rx="2" ry="2" />
+<text  x="430.78" y="206.5" >__x64_sys_poll</text>
+</g>
+<g >
+<title>x86_pmu_enable (40 samples, 74.07%)</title><rect x="427.8" y="340" width="1392.6" height="15.0" fill="rgb(237,152,21)" rx="2" ry="2" />
+<text  x="430.78" y="350.5" >x86_pmu_enable</text>
+</g>
+<g >
+<title>vboxNetFltLinuxPacketHandler (2 samples, 3.70%)</title><rect x="323.3" y="628" width="69.7" height="15.0" fill="rgb(223,152,36)" rx="2" ry="2" />
+<text  x="326.33" y="638.5" >vboxNet..</text>
+</g>
+<g >
+<title>select_task_rq_fair (1 samples, 1.85%)</title><rect x="184.1" y="452" width="34.8" height="15.0" fill="rgb(251,160,24)" rx="2" ry="2" />
+<text  x="187.07" y="462.5" >se..</text>
+</g>
+<g >
+<title>do_tty_write (1 samples, 1.85%)</title><rect x="184.1" y="324" width="34.8" height="15.0" fill="rgb(211,111,47)" rx="2" ry="2" />
+<text  x="187.07" y="334.5" >do..</text>
+</g>
+<g >
+<title>finish_task_switch.isra.0 (40 samples, 74.07%)</title><rect x="427.8" y="308" width="1392.6" height="15.0" fill="rgb(231,130,5)" rx="2" ry="2" />
+<text  x="430.78" y="318.5" >finish_task_switch.isra.0</text>
+</g>
+<g >
+<title>intel_pmu_enable_all (40 samples, 74.07%)</title><rect x="427.8" y="356" width="1392.6" height="15.0" fill="rgb(253,124,32)" rx="2" ry="2" />
+<text  x="430.78" y="366.5" >intel_pmu_enable_all</text>
+</g>
+<g >
+<title>[ssh] (1 samples, 1.85%)</title><rect x="79.6" y="196" width="34.8" height="15.0" fill="rgb(205,32,37)" rx="2" ry="2" />
+<text  x="82.63" y="206.5" >[s..</text>
+</g>
+<g >
+<title>__libc_start_call_main (54 samples, 100.00%)</title><rect x="10.0" y="100" width="1880.0" height="15.0" fill="rgb(205,20,26)" rx="2" ry="2" />
+<text  x="13.00" y="110.5" >__libc_start_call_main</text>
+</g>
+<g >
+<title>tty_poll (1 samples, 1.85%)</title><rect x="1855.2" y="244" width="34.8" height="15.0" fill="rgb(225,35,8)" rx="2" ry="2" />
+<text  x="1858.19" y="254.5" >tt..</text>
+</g>
+<g >
+<title>ip_finish_output (3 samples, 5.56%)</title><rect x="288.5" y="484" width="104.5" height="15.0" fill="rgb(216,9,9)" rx="2" ry="2" />
+<text  x="291.52" y="494.5" >ip_finish_ou..</text>
+</g>
+<g >
+<title>tcp_cleanup_rbuf (5 samples, 9.26%)</title><rect x="253.7" y="356" width="174.1" height="15.0" fill="rgb(235,208,49)" rx="2" ry="2" />
+<text  x="256.70" y="366.5" >tcp_cleanup_rbuf</text>
+</g>
+<g >
+<title>[ssh] (12 samples, 22.22%)</title><rect x="10.0" y="148" width="417.8" height="15.0" fill="rgb(221,117,0)" rx="2" ry="2" />
+<text  x="13.00" y="158.5" >[ssh]</text>
+</g>
+<g >
+<title>[ssh] (54 samples, 100.00%)</title><rect x="10.0" y="116" width="1880.0" height="15.0" fill="rgb(233,91,46)" rx="2" ry="2" />
+<text  x="13.00" y="126.5" >[ssh]</text>
+</g>
+<g >
+<title>new_sync_read (5 samples, 9.26%)</title><rect x="253.7" y="260" width="174.1" height="15.0" fill="rgb(222,146,29)" rx="2" ry="2" />
+<text  x="256.70" y="270.5" >new_sync_read</text>
+</g>
+<g >
+<title>pty_write (1 samples, 1.85%)</title><rect x="184.1" y="356" width="34.8" height="15.0" fill="rgb(206,171,7)" rx="2" ry="2" />
+<text  x="187.07" y="366.5" >pt..</text>
+</g>
+<g >
+<title>do_syscall_64 (42 samples, 77.78%)</title><rect x="427.8" y="180" width="1462.2" height="15.0" fill="rgb(218,47,21)" rx="2" ry="2" />
+<text  x="430.78" y="190.5" >do_syscall_64</text>
+</g>
+<g >
+<title>[ssh] (54 samples, 100.00%)</title><rect x="10.0" y="132" width="1880.0" height="15.0" fill="rgb(232,67,42)" rx="2" ry="2" />
+<text  x="13.00" y="142.5" >[ssh]</text>
+</g>
+<g >
+<title>all (54 samples, 100%)</title><rect x="10.0" y="36" width="1880.0" height="15.0" fill="rgb(219,65,47)" rx="2" ry="2" />
+<text  x="13.00" y="46.5" ></text>
+</g>
+<g >
+<title>sock_poll (1 samples, 1.85%)</title><rect x="1820.4" y="244" width="34.8" height="15.0" fill="rgb(221,226,39)" rx="2" ry="2" />
+<text  x="1823.37" y="254.5" >so..</text>
+</g>
+<g >
+<title>[ssh] (54 samples, 100.00%)</title><rect x="10.0" y="68" width="1880.0" height="15.0" fill="rgb(207,9,21)" rx="2" ry="2" />
+<text  x="13.00" y="78.5" >[ssh]</text>
+</g>
+<g >
+<title>do_poll.constprop.0 (42 samples, 77.78%)</title><rect x="427.8" y="228" width="1462.2" height="15.0" fill="rgb(244,24,7)" rx="2" ry="2" />
+<text  x="430.78" y="238.5" >do_poll.constprop.0</text>
+</g>
+<g >
+<title>vfs_write (1 samples, 1.85%)</title><rect x="184.1" y="260" width="34.8" height="15.0" fill="rgb(217,191,27)" rx="2" ry="2" />
+<text  x="187.07" y="270.5" >vf..</text>
+</g>
+<g >
+<title>tty_write (1 samples, 1.85%)</title><rect x="184.1" y="292" width="34.8" height="15.0" fill="rgb(246,208,32)" rx="2" ry="2" />
+<text  x="187.07" y="302.5" >tt..</text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (5 samples, 9.26%)</title><rect x="253.7" y="180" width="174.1" height="15.0" fill="rgb(221,72,2)" rx="2" ry="2" />
+<text  x="256.70" y="190.5" >entry_SYSCALL_64_after..</text>
+</g>
+<g >
+<title>ssh (54 samples, 100.00%)</title><rect x="10.0" y="52" width="1880.0" height="15.0" fill="rgb(218,214,20)" rx="2" ry="2" />
+<text  x="13.00" y="62.5" >ssh</text>
+</g>
+<g >
+<title>__GI___libc_write (1 samples, 1.85%)</title><rect x="184.1" y="180" width="34.8" height="15.0" fill="rgb(233,189,1)" rx="2" ry="2" />
+<text  x="187.07" y="190.5" >__..</text>
+</g>
+<g >
+<title>[ssh] (5 samples, 9.26%)</title><rect x="44.8" y="164" width="174.1" height="15.0" fill="rgb(233,203,12)" rx="2" ry="2" />
+<text  x="47.81" y="174.5" >[ssh]</text>
+</g>
+<g >
+<title>ksys_read (5 samples, 9.26%)</title><rect x="253.7" y="228" width="174.1" height="15.0" fill="rgb(215,16,51)" rx="2" ry="2" />
+<text  x="256.70" y="238.5" >ksys_read</text>
+</g>
+<g >
+<title>vfs_read (5 samples, 9.26%)</title><rect x="253.7" y="244" width="174.1" height="15.0" fill="rgb(239,119,39)" rx="2" ry="2" />
+<text  x="256.70" y="254.5" >vfs_read</text>
+</g>
+<g >
+<title>dev_hard_start_xmit (3 samples, 5.56%)</title><rect x="288.5" y="596" width="104.5" height="15.0" fill="rgb(251,146,0)" rx="2" ry="2" />
+<text  x="291.52" y="606.5" >dev_hard_sta..</text>
+</g>
+<g >
+<title>file_tty_write.constprop.0 (1 samples, 1.85%)</title><rect x="184.1" y="308" width="34.8" height="15.0" fill="rgb(229,166,19)" rx="2" ry="2" />
+<text  x="187.07" y="318.5" >fi..</text>
+</g>
+<g >
+<title>[libcrypto.so.3] (1 samples, 1.85%)</title><rect x="44.8" y="212" width="34.8" height="15.0" fill="rgb(205,152,40)" rx="2" ry="2" />
+<text  x="47.81" y="222.5" >[l..</text>
+</g>
+<g >
+<title>sock_read_iter (5 samples, 9.26%)</title><rect x="253.7" y="276" width="174.1" height="15.0" fill="rgb(234,119,42)" rx="2" ry="2" />
+<text  x="256.70" y="286.5" >sock_read_iter</text>
+</g>
+<g >
+<title>tcp_recvmsg_locked (5 samples, 9.26%)</title><rect x="253.7" y="340" width="174.1" height="15.0" fill="rgb(221,208,8)" rx="2" ry="2" />
+<text  x="256.70" y="350.5" >tcp_recvmsg_locked</text>
+</g>
+<g >
+<title>consume_skb (1 samples, 1.85%)</title><rect x="323.3" y="644" width="34.8" height="15.0" fill="rgb(238,27,43)" rx="2" ry="2" />
+<text  x="326.33" y="654.5" >co..</text>
+</g>
+<g >
+<title>sock_recvmsg (5 samples, 9.26%)</title><rect x="253.7" y="292" width="174.1" height="15.0" fill="rgb(216,58,38)" rx="2" ry="2" />
+<text  x="256.70" y="302.5" >sock_recvmsg</text>
+</g>
+<g >
+<title>schedule (40 samples, 74.07%)</title><rect x="427.8" y="276" width="1392.6" height="15.0" fill="rgb(228,79,4)" rx="2" ry="2" />
+<text  x="430.78" y="286.5" >schedule</text>
+</g>
+<g >
+<title>neigh_resolve_output (3 samples, 5.56%)</title><rect x="288.5" y="532" width="104.5" height="15.0" fill="rgb(218,159,42)" rx="2" ry="2" />
+<text  x="291.52" y="542.5" >neigh_resolv..</text>
+</g>
+<g >
+<title>__queue_work (1 samples, 1.85%)</title><rect x="184.1" y="404" width="34.8" height="15.0" fill="rgb(229,1,37)" rx="2" ry="2" />
+<text  x="187.07" y="414.5" >__..</text>
+</g>
+<g >
+<title>kmem_cache_free (1 samples, 1.85%)</title><rect x="323.3" y="676" width="34.8" height="15.0" fill="rgb(248,145,31)" rx="2" ry="2" />
+<text  x="326.33" y="686.5" >km..</text>
+</g>
+<g >
+<title>tcp_options_write (1 samples, 1.85%)</title><rect x="393.0" y="420" width="34.8" height="15.0" fill="rgb(234,61,42)" rx="2" ry="2" />
+<text  x="395.96" y="430.5" >tc..</text>
+</g>
+<g >
+<title>tcp_send_ack (5 samples, 9.26%)</title><rect x="253.7" y="372" width="174.1" height="15.0" fill="rgb(238,113,31)" rx="2" ry="2" />
+<text  x="256.70" y="382.5" >tcp_send_ack</text>
+</g>
+<g >
+<title>VBoxHost_RTThreadIsInInterrupt (1 samples, 1.85%)</title><rect x="358.1" y="660" width="34.9" height="15.0" fill="rgb(243,137,49)" rx="2" ry="2" />
+<text  x="361.15" y="670.5" >VB..</text>
+</g>
+<g >
+<title>ip_local_out (4 samples, 7.41%)</title><rect x="253.7" y="452" width="139.3" height="15.0" fill="rgb(232,45,53)" rx="2" ry="2" />
+<text  x="256.70" y="462.5" >ip_local_out</text>
+</g>
+<g >
+<title>__vdso_clock_gettime (1 samples, 1.85%)</title><rect x="218.9" y="180" width="34.8" height="15.0" fill="rgb(205,165,14)" rx="2" ry="2" />
+<text  x="221.89" y="190.5" >__..</text>
+</g>
+<g >
+<title>sch_direct_xmit (3 samples, 5.56%)</title><rect x="288.5" y="580" width="104.5" height="15.0" fill="rgb(227,110,22)" rx="2" ry="2" />
+<text  x="291.52" y="590.5" >sch_direct_x..</text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (42 samples, 77.78%)</title><rect x="427.8" y="164" width="1462.2" height="15.0" fill="rgb(249,167,0)" rx="2" ry="2" />
+<text  x="430.78" y="174.5" >entry_SYSCALL_64_after_hwframe</text>
+</g>
+<g >
+<title>__x64_sys_write (1 samples, 1.85%)</title><rect x="184.1" y="228" width="34.8" height="15.0" fill="rgb(222,138,34)" rx="2" ry="2" />
+<text  x="187.07" y="238.5" >__..</text>
+</g>
+<g >
+<title>[libcrypto.so.3] (1 samples, 1.85%)</title><rect x="44.8" y="196" width="34.8" height="15.0" fill="rgb(243,134,43)" rx="2" ry="2" />
+<text  x="47.81" y="206.5" >[l..</text>
+</g>
+<g >
+<title>__GI___libc_malloc (1 samples, 1.85%)</title><rect x="79.6" y="212" width="34.8" height="15.0" fill="rgb(251,71,49)" rx="2" ry="2" />
+<text  x="82.63" y="222.5" >__..</text>
+</g>
+<g >
+<title>__ip_queue_xmit (4 samples, 7.41%)</title><rect x="253.7" y="436" width="139.3" height="15.0" fill="rgb(229,57,4)" rx="2" ry="2" />
+<text  x="256.70" y="446.5" >__ip_queue_xmit</text>
+</g>
+<g >
+<title>ip_finish_output2 (3 samples, 5.56%)</title><rect x="288.5" y="516" width="104.5" height="15.0" fill="rgb(237,215,4)" rx="2" ry="2" />
+<text  x="291.52" y="526.5" >ip_finish_ou..</text>
+</g>
+<g >
+<title>do_syscall_64 (5 samples, 9.26%)</title><rect x="253.7" y="196" width="174.1" height="15.0" fill="rgb(244,150,31)" rx="2" ry="2" />
+<text  x="256.70" y="206.5" >do_syscall_64</text>
+</g>
+<g >
+<title>[ssh] (1 samples, 1.85%)</title><rect x="79.6" y="180" width="34.8" height="15.0" fill="rgb(237,196,39)" rx="2" ry="2" />
+<text  x="82.63" y="190.5" >[s..</text>
+</g>
+<g >
+<title>__tcp_transmit_skb (5 samples, 9.26%)</title><rect x="253.7" y="404" width="174.1" height="15.0" fill="rgb(222,153,50)" rx="2" ry="2" />
+<text  x="256.70" y="414.5" >__tcp_transmit_skb</text>
+</g>
+<g >
+<title>insert_work (1 samples, 1.85%)</title><rect x="184.1" y="420" width="34.8" height="15.0" fill="rgb(213,110,36)" rx="2" ry="2" />
+<text  x="187.07" y="430.5" >in..</text>
+</g>
+<g >
+<title>__GI___clock_gettime (1 samples, 1.85%)</title><rect x="218.9" y="164" width="34.8" height="15.0" fill="rgb(217,159,52)" rx="2" ry="2" />
+<text  x="221.89" y="174.5" >__..</text>
+</g>
+<g >
+<title>n_tty_write (1 samples, 1.85%)</title><rect x="184.1" y="340" width="34.8" height="15.0" fill="rgb(249,110,13)" rx="2" ry="2" />
+<text  x="187.07" y="350.5" >n_..</text>
+</g>
+<g >
+<title>ip_output (3 samples, 5.56%)</title><rect x="288.5" y="468" width="104.5" height="15.0" fill="rgb(213,13,46)" rx="2" ry="2" />
+<text  x="291.52" y="478.5" >ip_output</text>
+</g>
+<g >
+<title>queue_work_on (1 samples, 1.85%)</title><rect x="184.1" y="388" width="34.8" height="15.0" fill="rgb(222,192,9)" rx="2" ry="2" />
+<text  x="187.07" y="398.5" >qu..</text>
+</g>
+<g >
+<title>EVP_Cipher (1 samples, 1.85%)</title><rect x="44.8" y="180" width="34.8" height="15.0" fill="rgb(240,211,24)" rx="2" ry="2" />
+<text  x="47.81" y="190.5" >EV..</text>
+</g>
+<g >
+<title>__packet_rcv_has_room (1 samples, 1.85%)</title><rect x="288.5" y="644" width="34.8" height="15.0" fill="rgb(209,228,14)" rx="2" ry="2" />
+<text  x="291.52" y="654.5" >__..</text>
+</g>
+<g >
+<title>__x64_sys_read (5 samples, 9.26%)</title><rect x="253.7" y="212" width="174.1" height="15.0" fill="rgb(217,81,21)" rx="2" ry="2" />
+<text  x="256.70" y="222.5" >__x64_sys_read</text>
+</g>
+<g >
+<title>vboxNetFltLinuxForwardSegment.isra.0 (1 samples, 1.85%)</title><rect x="358.1" y="644" width="34.9" height="15.0" fill="rgb(236,174,35)" rx="2" ry="2" />
+<text  x="361.15" y="654.5" >vb..</text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (1 samples, 1.85%)</title><rect x="184.1" y="196" width="34.8" height="15.0" fill="rgb(210,201,53)" rx="2" ry="2" />
+<text  x="187.07" y="206.5" >en..</text>
+</g>
+<g >
+<title>native_write_msr (40 samples, 74.07%)</title><rect x="427.8" y="372" width="1392.6" height="15.0" fill="rgb(254,3,35)" rx="2" ry="2" />
+<text  x="430.78" y="382.5" >native_write_msr</text>
+</g>
+<g >
+<title>__GI___libc_read (5 samples, 9.26%)</title><rect x="253.7" y="164" width="174.1" height="15.0" fill="rgb(235,132,10)" rx="2" ry="2" />
+<text  x="256.70" y="174.5" >__GI___libc_read</text>
+</g>
+<g >
+<title>__perf_event_task_sched_in (40 samples, 74.07%)</title><rect x="427.8" y="324" width="1392.6" height="15.0" fill="rgb(214,83,34)" rx="2" ry="2" />
+<text  x="430.78" y="334.5" >__perf_event_task_sched_in</text>
+</g>
+</g>
+</svg>
