@@ -130,10 +130,13 @@ ${opts}
 which perf >/dev/null 2>&1 || die "${name}: perf not installed? Aborting...
  Tip- (Deb/Ubuntu) sudo apt install linux-tools-$(uname -r) linux-tools-generic"
 [ ! -f ${PFX}/2flameg.sh ] && die "The part-2 script 2flameg.sh is missing? Aborting..."
-[ ! -d ${FLMGR} ] && die "I find that the original FlameGraph GitHub repo isn't installed.
+[ ! -d ${FLMGR} ] && {
+	red_fg "I find that the original FlameGraph GitHub repo isn't installed.
  You need to (one-time) install it (under your home dir).
- In your terminal window/shell, type (including the parentheses) -OR- simply copy-paste the line below:
- (cd; git clone https://github.com/brendangregg/FlameGraph)"
+ In your terminal window/shell, type (including the parentheses) -OR- simply copy-paste the line (in blue) below:"
+ 	blue_fg "(cd; git clone https://github.com/brendangregg/FlameGraph)"
+	exit 1
+}
 
 # RedHat-like distros are often missing the perl-open package, req by the FlameGraph perl script
 lsb_release -i|grep -E -i "RedHat|Alma|Rocky" && {
