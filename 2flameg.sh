@@ -36,7 +36,6 @@ speedscope_gen()
 {
 cd ${RES_DIR} || exit 1
 local SPEEDSCOPE_FILE="speedscope_${OUTFILE::-4}.txt"
-#echo "sudo perf script --input ${INFILE} > ${SPEEDSCOPE_FILE}"
 red_fg "
 --- speedscope ---"
 sudo perf script --input ${INFILE} -f > ${SPEEDSCOPE_FILE}
@@ -46,7 +45,7 @@ green_fg "- ${SPEEDSCOPE_HELP1}"
 blue_fg "- ${SPEEDSCOPE_HELP2}"
 green_fg "- ${SPEEDSCOPE_HELP3}"
 ls -lh $(realpath ${SPEEDSCOPE_FILE})
-red_fg "---"
+#red_fg "---"
 }
 
 
@@ -63,12 +62,8 @@ tok=$(ps -o stat= -p $PPID)  # yields 'S+' via script and 'Ss' via cmdline
  exit 1
 }
 
-INFILE=perf.data
-OUTFILE=${2}
-
 TOPDIR=${PWD}
 cd ${1} || exit 1
-#pwd
 
 INFILE=perf.data
 RES_DIR="${1}"
@@ -129,7 +124,6 @@ else
   }
 fi
 
-#set -x
 [[ -n "${CMD}" ]] && TITLE="${TITLE}; cmdline: \"${CMD}\""
 
 if [[ ${STYLE} -eq 0 ]] ; then
